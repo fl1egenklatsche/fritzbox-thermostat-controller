@@ -2,28 +2,39 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Fritz Thermostate</title>
-  <style>
-    body{font-family:Segoe UI,Arial;margin:20px}
-    .device{border:1px solid #ddd;padding:10px;margin:10px;border-radius:6px}
-  </style>
+  <title>FritzBox Thermostat Controller</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:20px}</style>
 </head>
 <body>
-  <h1>Fritz Thermostat Controller</h1>
-  <div id="devices">Lade...</div>
+  <h1>FritzBox Thermostat Controller</h1>
+  <p>Real FritzBox integration: {{ 'ja' if real else 'nein (Mock aktiv)' }}</p>
+  <ul>
+  {% for d in devices %}
+    <li>
+      <a href="#" onclick="openDevice('{{ d.ain }}');return false">{{ d.name }} ({{ d.ain }})</a>
+    </li>
+  {% endfor %}
+  </ul>
+
+  <div id="device" style="margin-top:20px"></div>
+
   <script>
-    async function load(){
-      const r = await fetch('/api/devices');
-      const devices = await r.json();
-      const root = document.getElementById('devices');
-      root.innerHTML='';
-      devices.forEach(d=>{
-        const el = document.createElement('div'); el.className='device';
-        el.innerHTML = `<strong>${d.name||d.ain}</strong><div>Ain: ${d.ain}</div><div>Temp: ${d.temp||'-'}</div><div>Battery: ${d.battery||'-'}</div>`;
-        root.appendChild(el);
-      })
-    }
-    load(); setInterval(load,300000);
+  async function openDevice(ain){
+    const res = await fetch('/api/device/'+ain+'/history')
+    const data = await res.json()
+    document.getElementById('device').innerHTML = `<h2>Device ${ain}</h2><canvas id="chart"></canvas><div><label>Set temp <input id='t' type='number' step='0.5'/> <button onclick="setTemp('${ain}')">Set</button></label></div>`
+    const labels = data.map(r=>new Date(r.created_at).toLocaleString()).reverse()
+    const temps = data.map(r=>r.measured_temp).reverse()
+    const ctx = document.getElementById('chart').getContext('2d')
+    new Chart(ctx,{type:'line',data:{labels:labels,datasets:[{label:'Measured temp',data:temps,borderColor:'rgb(75,192,192)',tension:0.2}]}})
+  }
+
+  async function setTemp(ain){
+    const t = parseFloat(document.getElementById('t').value)
+    await fetch('/api/device/'+ain+'/set_temp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({temp:t})})
+    alert('ok')
+  }
   </script>
 </body>
 </html>

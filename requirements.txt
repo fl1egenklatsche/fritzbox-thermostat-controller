@@ -2,9 +2,10 @@ fastapi
 uvicorn[standard]
 python-fritzconnection
 aiohttp
+databases[aiosqlite]
 sqlalchemy
-databases
 pydantic
 python-dotenv
 jinja2
 aiofiles
+chartjs==0.0.3

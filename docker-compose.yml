@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  fritz-thermostat:
+    build: .
+    container_name: fritz-thermostat
+    ports:
+      - "9999:9999"
+    volumes:
+      - fritz_data:/app/data
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///app/data/fritz_history.db
+      - FRITZ_HOST=192.168.178.1
+      - FRITZ_USER=placeholder
+      - FRITZ_PASS=placeholder
+      - TELEGRAM_ALERTS=false
+
+volumes:
+  fritz_data:
