@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+python-fritzconnection
+aiohttp
+sqlalchemy
+databases
+pydantic
+python-dotenv
+jinja2
+aiofiles

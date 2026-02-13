@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Fritz Thermostate</title>
+  <style>
+    body{font-family:Segoe UI,Arial;margin:20px}
+    .device{border:1px solid #ddd;padding:10px;margin:10px;border-radius:6px}
+  </style>
+</head>
+<body>
+  <h1>Fritz Thermostat Controller</h1>
+  <div id="devices">Lade...</div>
+  <script>
+    async function load(){
+      const r = await fetch('/api/devices');
+      const devices = await r.json();
+      const root = document.getElementById('devices');
+      root.innerHTML='';
+      devices.forEach(d=>{
+        const el = document.createElement('div'); el.className='device';
+        el.innerHTML = `<strong>${d.name||d.ain}</strong><div>Ain: ${d.ain}</div><div>Temp: ${d.temp||'-'}</div><div>Battery: ${d.battery||'-'}</div>`;
+        root.appendChild(el);
+      })
+    }
+    load(); setInterval(load,300000);
+  </script>
+</body>
+</html>
