@@ -74,9 +74,27 @@ async def shutdown():
         if asyncio.iscoroutine(maybe):
             await maybe
 
+import base64
+
 @app.get('/', response_class=HTMLResponse)
-async def index(request: Request, credentials: HTTPBasicCredentials = Depends(security)):
-    check_basic(credentials)
+async def index(request: Request):
+    # manual basic auth parsing to avoid Depends issues in constrained env
+    auth = request.headers.get('authorization')
+    if not auth or not auth.lower().startswith('basic '):
+        from fastapi import status
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Unauthorized')
+    try:
+        token = auth.split(' ',1)[1]
+        decoded = base64.b64decode(token).decode()
+        user, passwd = decoded.split(':',1)
+        class C:
+            def __init__(self,u,p):
+                self.username=u; self.password=p
+        creds = C(user, passwd)
+        check_basic(creds)
+    except Exception:
+        from fastapi import status
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Unauthorized')
     devices = await manager.list_devices()
     return templates.TemplateResponse('index.html', {'request': request, 'devices': devices, 'real': REAL_FRITZ})
 
