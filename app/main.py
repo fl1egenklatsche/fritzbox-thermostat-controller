@@ -19,6 +19,9 @@ except Exception:
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 DB_URL = os.environ.get('DATABASE_URL', 'sqlite+aiosqlite:///'+os.path.join(BASE_DIR,'data','fritz_history.db'))
 
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+import secrets
+
 app = FastAPI(title='FritzBox Thermostat Controller')
 app.mount('/static', StaticFiles(directory=os.path.join(BASE_DIR, 'static')), name='static')
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, 'templates'))
@@ -28,6 +31,18 @@ REQUIRED_ENVS = ['DATABASE_URL']
 missing = [k for k in REQUIRED_ENVS if not os.environ.get(k)]
 if missing:
     print(f'WARNING: missing env vars: {missing} - falling back to defaults')
+
+# Basic auth config (for demo)
+BASIC_USER = os.environ.get('BASIC_AUTH_USER', 'demo')
+BASIC_PASS = os.environ.get('BASIC_AUTH_PASS', 'demo123')
+security = HTTPBasic()
+
+def check_basic(credentials: HTTPBasicCredentials):
+    correct_user = secrets.compare_digest(credentials.username, BASIC_USER)
+    correct_pass = secrets.compare_digest(credentials.password, BASIC_PASS)
+    if not (correct_user and correct_pass):
+        from fastapi import status
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Unauthorized')
 
 
 database = Database(DB_URL)
@@ -56,7 +71,8 @@ async def shutdown():
             await maybe
 
 @app.get('/', response_class=HTMLResponse)
-async def index(request: Request):
+async def index(request: Request, credentials: HTTPBasicCredentials = Depends(security)):
+    check_basic(credentials)
     devices = await manager.list_devices()
     return templates.TemplateResponse('index.html', {'request': request, 'devices': devices, 'real': REAL_FRITZ})
 
