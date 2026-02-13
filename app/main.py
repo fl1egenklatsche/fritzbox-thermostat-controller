@@ -78,6 +78,11 @@ import base64
 
 @app.get('/', response_class=HTMLResponse)
 async def index(request: Request):
+    # allow disabling auth for quick tests via env DISABLE_AUTH=1
+    if os.environ.get('DISABLE_AUTH') == '1':
+        devices = await manager.list_devices()
+        return templates.TemplateResponse('index.html', {'request': request, 'devices': devices, 'real': REAL_FRITZ})
+
     # manual basic auth parsing to avoid Depends issues in constrained env
     auth = request.headers.get('authorization')
     if not auth or not auth.lower().startswith('basic '):
