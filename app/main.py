@@ -45,6 +45,10 @@ def check_basic(credentials: HTTPBasicCredentials):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Unauthorized')
 
 
+# ensure data dir exists for sqlite
+data_dir = os.path.join(BASE_DIR,'data')
+os.makedirs(data_dir, exist_ok=True)
+
 database = Database(DB_URL)
 engine = create_engine(DB_URL.replace('+aiosqlite',''))
 metadata.create_all(engine)
