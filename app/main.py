@@ -23,6 +23,13 @@ app = FastAPI(title='FritzBox Thermostat Controller')
 app.mount('/static', StaticFiles(directory=os.path.join(BASE_DIR, 'static')), name='static')
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, 'templates'))
 
+# simple env validation
+REQUIRED_ENVS = ['DATABASE_URL']
+missing = [k for k in REQUIRED_ENVS if not os.environ.get(k)]
+if missing:
+    print(f'WARNING: missing env vars: {missing} - falling back to defaults')
+
+
 database = Database(DB_URL)
 engine = create_engine(DB_URL.replace('+aiosqlite',''))
 metadata.create_all(engine)
@@ -31,6 +38,7 @@ manager = FritzManager()
 
 @app.on_event('startup')
 async def startup():
+    print('Starting FritzBox Thermostat Controller')
     await database.connect()
     # if manager has async start, run it
     if hasattr(manager, 'start'):
@@ -40,6 +48,7 @@ async def startup():
 
 @app.on_event('shutdown')
 async def shutdown():
+    print('Shutting down FritzBox Thermostat Controller')
     await database.disconnect()
     if hasattr(manager, 'stop'):
         maybe = manager.stop()
@@ -50,6 +59,23 @@ async def shutdown():
 async def index(request: Request):
     devices = await manager.list_devices()
     return templates.TemplateResponse('index.html', {'request': request, 'devices': devices, 'real': REAL_FRITZ})
+
+@app.get('/health')
+async def health():
+    # lightweight health endpoint for Portainer / readiness probes
+    ok = True
+    reasons = []
+    try:
+        # DB connect check
+        if database.is_connected:
+            pass
+        else:
+            reasons.append('db_disconnected')
+            ok = False
+    except Exception:
+        reasons.append('db_check_failed')
+        ok = False
+    return JSONResponse({'ok': ok, 'reasons': reasons})
 
 @app.get('/api/devices')
 async def api_devices():
