@@ -1,85 +1,77 @@
+import os
 import asyncio
-from fritzconnection import FritzConnection
-from fritzconnection.lib.fritzhosts import FritzHosts
-from fritzconnection.core.exceptions import FritzConnectionException
-import time
+from typing import List, Dict, Any
+
+DB_POLL_INTERVAL = float(os.environ.get('POLL_INTERVAL', '30'))
+
+try:
+    # real fritzconnection imports
+    from fritzconnection import FritzConnection
+    REAL_AVAILABLE = True
+except Exception:
+    REAL_AVAILABLE = False
+
+from app.fritz_mock import FritzMock
+from databases import Database
+from app.db import device_history
 
 class FritzManager:
-    def __init__(self, box_ip, username=None, password=None, poll_interval=300):
-        self.box_ip = box_ip
-        self.username = username
-        self.password = password
-        self.poll_interval = poll_interval
-        self._fc = None
-        self._devices = {}
-        self._task = None
+    def __init__(self, host=None, user=None, password=None):
+        self.host = host or os.environ.get('FRITZ_HOST')
+        self.user = user or os.environ.get('FRITZ_USER')
+        self.password = password or os.environ.get('FRITZ_PASS')
         self._running = False
-        self._history = {}
+        self._task = None
+        self.db = Database(os.environ.get('DATABASE_URL', 'sqlite+aiosqlite:///app/data/fritz_history.db'))
+        if REAL_AVAILABLE and self.host and self.user and self.password:
+            # placeholder for real connection, not fully implemented
+            self._backend = FritzConnection(address=self.host, user=self.user, password=self.password)
+        else:
+            self._backend = FritzMock()
 
     async def start(self):
-        loop = asyncio.get_event_loop()
-        try:
-            self._fc = FritzConnection(address=self.box_ip, user=self.username, password=self.password)
-        except FritzConnectionException:
-            self._fc = None
+        await self.db.connect()
         self._running = True
-        self._task = loop.create_task(self._poll_loop())
+        self._task = asyncio.create_task(self._poll_loop())
 
     async def stop(self):
         self._running = False
         if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+            await self._task
+        await self.db.disconnect()
 
     async def _poll_loop(self):
         while self._running:
             try:
-                await self._discover()
+                devices = await self.list_devices()
+                for d in devices:
+                    try:
+                        # read fresh state
+                        state = await self.read_device(d['ain'])
+                        query = device_history.insert().values(
+                            ain=state['ain'],
+                            measured_temp=state.get('measured_temp'),
+                            target_temp=state.get('target_temp'),
+                            battery=state.get('battery'),
+                            valve_state=state.get('valve_state')
+                        )
+                        await self.db.execute(query=query)
+                    except Exception:
+                        # ignore per-device errors
+                        continue
             except Exception:
+                # global poll errors ignored
                 pass
-            await asyncio.sleep(self.poll_interval)
+            await asyncio.sleep(DB_POLL_INTERVAL)
 
-    async def _discover(self):
-        if not self._fc:
-            try:
-                self._fc = FritzConnection(address=self.box_ip, user=self.username, password=self.password)
-            except Exception:
-                return
-        # use device list from TR-064 services
-        # simplified: use fritzhosts to list devices and filter by DECT
-        try:
-            fh = FritzHosts(self._fc)
-            hosts = fh.get_hosts_info()
-            # naive parsing: find devices with 'dect' in name
-            for h in hosts:
-                name = h.get('host')
-                ain = h.get('ain') or h.get('mac')
-                if not ain:
-                    continue
-                if 'DECT' in str(name).upper() or 'thermostat' in str(name).lower() or 'heizung' in str(name).lower():
-                    # placeholder telemetry
-                    self._devices[ain] = {
-                        'name': name,
-                        'ain': ain,
-                        'temp': None,
-                        'battery': None,
-                        'last_seen': time.time()
-                    }
-                    self._history.setdefault(ain, []).append({'ts': time.time(), 'temp': None})
-        except Exception:
-            return
+    async def discover(self) -> List[Dict[str, Any]]:
+        return await self._backend.discover()
 
-    async def list_devices(self):
-        return list(self._devices.values())
+    async def list_devices(self) -> List[Dict[str, Any]]:
+        return await self._backend.list_devices()
 
-    async def set_temperature(self, ain, temperature):
-        # placeholder: actual implementation requires TR-064 action calls to the DECT thermostat service
-        # store in history
-        self._history.setdefault(ain, []).append({'ts': time.time(), 'temp_set': temperature})
-        return True
+    async def read_device(self, ain: str) -> Dict[str, Any]:
+        return await self._backend.read(ain)
 
-    async def get_history(self, ain):
-        return self._history.get(ain, [])
+    async def set_target(self, ain: str, temp: float):
+        return await self._backend.set_target(ain, temp)
